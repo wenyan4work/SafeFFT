@@ -1,0 +1,7 @@
+.vscode/
+log*.txt
+*.log
+*.X
+*.o
+bin/
+obj/
