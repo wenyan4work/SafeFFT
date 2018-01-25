@@ -19,6 +19,7 @@ For the same reason, I am not using a concurrent unordered_map like the one from
 ## Usage scenario
 1. All threads share one SafeFFT object to process many FFTs in parallel (see `test/TestForwardBackward.cpp`)
 2. Every objet can have its own SafeFFT object to process its FFT, and then many such objects are partitioned through `#omp parallel for` to execute FFT simultaneously (see `test/Test1DSmall.cpp` and other)
+3. In any cases, the member functions of `SafeFFT` are supposed to be called from the root level openmp thread team. Otherwise, the thread id returned by `omp_get_thread_num()` may not be meaningful, which may cause problems when locating the per thread buffer and internal locks.  
 
 ## Implementation Notes
 1. It is header only. Put `SafeFFT.hpp` and `AlignedMemory.hpp` anywhere and it should work.
@@ -28,14 +29,13 @@ For the same reason, I am not using a concurrent unordered_map like the one from
 5. Link with either `libfftw3_omp` or `mkl`
 6. If using MKL, define the macro FFTW3_MKL for threading control
 7. If using MKL, calling `runFFT()` from multiple threads needs careful threading control. The only working setting I figured out is: a. Setting `OMP_NUM_THREADS` to control the number of threads calling `runFFT()`. b. setting `mkl_set_num_threads_local(plan_.nThreads);` in `runFFT()` to ensure the number of threads to execute this plan. c. Setting `OMP_NESTED=true` and `MKL_DYNAMIC=false`. DO NOT set `MKL_NUM_THREADS`. 
-8. Nested threading is implemented for flexibility. For small FFTs (even those in Test1DLarge.cpp), sticking to `plan.nThreads=1` gives better performance. On my 12-core Xeon, the program Test1DLarge shows around 95% efficiency with 10 cores. It is the user's duty to make sure that no cpu oversubscription happens.
+8. Nested threading is implemented for flexibility. For small FFTs (even those in Test1DLarge.cpp), sticking to `plan.nThreads=1` gives better performance. On my 12-core Xeon, the program Test1DLarge shows around 95% efficiency with 10 cores. It is the user's duty to think about it and get good performance.
 9. `fftw3_threads` uses pthread rather than openmp thread (at least in my understanding). In my tests on a Mac the nested threading control still works well.
 
 ## Possible Issues
 1. I cannot guarantee the naive implementation of RWLock with omp_lock is optimal or even correct, although it works fine in my tests.
-2. Each runFFT is allowed to spawn new nested OMP threads and run FFTs with multiple threads. This feature is not fully tested.
-3. The effect of mixing with other thread models is unknown.
+2. The effect of mixing with other thread models is unknown.
 
 ## Possible Extensions 
 1. The code is probably ugly and I cannot guarentee it is bug free. Comments, forks, and bug reports are welcome.
-2. The code currently implements interfaces for simple 1D/2D/3D complex dfts only. If you need other transforms like r2c,c2r, etc, is should be fairly simple to extend.
+2. The code currently implements interfaces for simple 1D/2D/3D complex DFTs only. If you need other transforms like r2c,c2r, etc, the code should be fairly simple to extend.
