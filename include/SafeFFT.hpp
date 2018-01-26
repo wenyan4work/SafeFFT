@@ -216,14 +216,14 @@ class SafeFFT {
     SafeFFT &operator=(const SafeFFT &) = default;
     SafeFFT &operator=(SafeFFT &&) = default;
 
-    void runFFT(const PlanFFT &plan, ComplexT *in, ComplexT *out) {
+    static void runFFT(const PlanFFT &plan, ComplexT *in, ComplexT *out) {
         assert(runnerPtr); // the runner has been allocated.
         runnerPtr->runFFT(plan, in, out);
     }
 
     // return in/out large enough for the plan
     // operate only on the buffer for this thread
-    void fitBuffer(const PlanFFT &plan, ComplexPtrT &in, ComplexPtrT &out) { runnerPtr->fitBuffer(plan, in, out); }
+    static void fitBuffer(const PlanFFT &plan, ComplexPtrT &in, ComplexPtrT &out) { runnerPtr->fitBuffer(plan, in, out); }
 
     static void init() { runnerPtr = new Runner(DEFAULTSIZE); }
 

@@ -8,9 +8,11 @@
 #include "Timer.hpp"
 
 void testSafeFFT() {
-    safefft::SafeFFT myFFT;
-    const int workNumber = 10000000;
+    using safefft::SafeFFT;
+    using safefft::SafeFFT;
+
     // a list of FFTs to run
+    const int workNumber = 10000000;
     std::vector<safefft::PlanFFT> work(workNumber);
     int size[6] = {256, 512, 1024, 384, 128, 768}; // a large data set
 
@@ -30,7 +32,7 @@ void testSafeFFT() {
 
         // get in out buffer
         safefft::ComplexPtrT in, out;
-        myFFT.fitBuffer(forward, in, out);
+        safefft::SafeFFT::fitBuffer(forward, in, out);
 
         for (int i = 0; i < forward.n0; i++) {
             in[i][0] = i + 1;
@@ -38,10 +40,10 @@ void testSafeFFT() {
         }
 
         // forward
-        myFFT.runFFT(forward, in, out);
+        SafeFFT::runFFT(forward, in, out);
 
         // backward
-        myFFT.runFFT(backward, out, in);
+        SafeFFT::runFFT(backward, out, in);
 
         // compare error of real part
         error = 0;
