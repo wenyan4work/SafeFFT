@@ -24,19 +24,19 @@ void testSafeFFT() {
         safefft::PlanFFT forward, backward;
         forward.n0 = size[(i + 1) % 6];
         forward.nThreads = 1; // 1-4 threads, to test nested OMP
-        forward.sign = 1;
+        forward.sign = FFTW_FORWARD;
 
         backward.n0 = forward.n0;
         backward.nThreads = forward.nThreads;
-        backward.sign = -1;
+        backward.sign = FFTW_BACKWARD;
 
         // get in out buffer
         safefft::ComplexT *in, *out;
         safefft::SafeFFT::fitBuffer(forward, &in, nullptr, nullptr, &out, nullptr, nullptr);
 
         for (int i = 0; i < forward.n0; i++) {
-            in[i][0] = i + 1;
-            in[i][1] = i * 2;
+            in[i][0] = i;
+            in[i][1] = 0;
         }
 
         // forward
@@ -48,7 +48,7 @@ void testSafeFFT() {
         // compare error of real part
         error = 0;
         for (int k = 0; k < forward.n0; k++) {
-            error = std::max(error, fabs(in[k][0] / forward.n0 - (double)(k + 1)));
+            error = std::max(error, fabs(in[k][0] / forward.n0 - (double)(k)));
         }
 #ifndef NDEBUG
 #pragma omp critical

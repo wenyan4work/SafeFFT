@@ -7,7 +7,7 @@
 #include "../include/SafeFFT.hpp"
 #include "Timer.hpp"
 
-#define TOTALSIZE 30
+#define TOTALSIZE 10
 #define WORKNUMBER 10000
 
 void benchSafeFFT() {
@@ -27,7 +27,7 @@ void benchSafeFFT() {
 
     // prepare
     for (int i = 0; i < workNumber; i++) {
-        const int workSize = 4 * dis(gen); // from 4 to 4*TOTALSIZE
+        const int workSize = 4 * dis(gen); // from 128 to 128*TOTALSIZE
         work[i].myPlan.n0 = workSize;
         work[i].myPlan.n1 = workSize;
         work[i].myPlan.nThreads = dis(gen) % 4 + 1; // 1 to 4 threads, nested omp threads
@@ -40,14 +40,14 @@ void benchSafeFFT() {
 #pragma omp parallel for
     for (int i = 0; i < workNumber; i++) {
         int tid = omp_get_thread_num();
-        safefft::ComplexPtrT in = nullptr, out = nullptr;
+        safefft::ComplexT *in = nullptr, *out = nullptr;
         // printf("%u,%u\n", in, out);
-        work[i].myFFT.fitBuffer(work[i].myPlan, in, out); // contain garbage data
+        work[i].myFFT.fitBuffer(work[i].myPlan, &in, nullptr, nullptr, &out, nullptr, nullptr); // contain garbage data
         // printf("%u,%u\n", in, out);
 
         // run 10 times
         for (int c = 0; c < 10; c++) {
-            work[i].myFFT.runFFT(work[i].myPlan, in, out);
+            work[i].myFFT.runFFT(work[i].myPlan, in, nullptr, nullptr, out, nullptr, nullptr);
         }
     }
     mytimer.stop("FFT finished");

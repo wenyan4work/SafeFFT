@@ -17,7 +17,7 @@
 #include "AlignedMemory.hpp"
 
 #define DEFAULTALIGN 32            // number of bytes
-#define DEFAULTSIZE 1024           // number of ComplexT
+#define DEFAULTSIZE 128            // number of ComplexT
 #define DEFAULTPLANTIME 2          // 2 seconds of planning time
 #define DEFAULTMAXRANK 3           // max 3 dimensional
 #define DEFAULTSIGN (FFTW_FORWARD) // sign of Fourier transform
@@ -62,7 +62,7 @@ struct PlanGuruFFT {
     // CHECK: clear up the meanings of iodim and howmany_dim
     PlanGuruFFT() {
         rank = DEFAULTMAXRANK;
-        howmany_rank = DEFAULTMAXRANK;
+        howmany_rank = 0; // default to only 1 FFT
         sign = DEFAULTSIGN;
         flags = DEFAULTFLAG;
         fft_type = FFTTYPE::C2CINTER;
@@ -115,32 +115,51 @@ struct PlanGuruFFT {
         // FFTW manual page 35: for a single transform, set howmany_rank=0
         howmany_rank = 0;
 
-        rank = 3;
-        dims[0].n = simplePlan.n0;
-        dims[1].n = simplePlan.n1;
-        dims[2].n = simplePlan.n2;
-
-
-        // set stride for row-major array
-        // Ref FFTW manual apge 35
-        dims[2].is = 1;
-        dims[2].os = 1;
-        dims[1].is = dims[2].n * dims[2].is;
-        dims[1].os = dims[2].n * dims[2].os;
-        dims[0].is = dims[1].n * dims[1].is;
-        dims[0].os = dims[1].n * dims[1].os;
+        if (simplePlan.n1 == 1 && simplePlan.n2 == 1) {
+            // 1d
+            rank = 1;
+            dims[0].n = simplePlan.n0;
+            dims[0].is = 1;
+            dims[0].os = 1;
+        } else if (simplePlan.n2 == 1) {
+            // 2d
+            rank = 2;
+            dims[0].n = simplePlan.n0;
+            dims[1].n = simplePlan.n1;
+            // set stride for row-major array
+            // Ref FFTW manual page 35
+            dims[1].is = 1;
+            dims[1].os = 1;
+            dims[0].is = dims[1].n * dims[1].is;
+            dims[0].os = dims[1].n * dims[1].os;
+        } else {
+            // 3d
+            rank = 3;
+            dims[0].n = simplePlan.n0;
+            dims[1].n = simplePlan.n1;
+            dims[2].n = simplePlan.n2;
+            // set stride for row-major array
+            // Ref FFTW manual page 35
+            dims[2].is = 1;
+            dims[2].os = 1;
+            dims[1].is = dims[2].n * dims[2].is;
+            dims[1].os = dims[2].n * dims[2].os;
+            dims[0].is = dims[1].n * dims[1].is;
+            dims[0].os = dims[1].n * dims[1].os;
+        }
     }
 
     size_t getSingleSize() const {
         // the size large enough to hold the input (or output) data
-        // for C2C, this is the actual size needed
+        // for C2C, this is a bit larger than the actual size needed
         // For R2C/C2R transforms, this is LARGER than the actual size needed
         // accurate size depends on the underlying actual lib used (fftw, mkl)
         // determining the actual accurate size is tediouly complicated
         size_t size = 1;
         for (int r = 0; r < rank; r++) {
-            size = size * dims[r].n;
+            size = size * (dims[r].n + 2);
         }
+        // printf("single size: %d\n", size);
         return size;
     }
 
@@ -149,8 +168,19 @@ struct PlanGuruFFT {
         for (int r = 0; r < howmany_rank; r++) {
             size = size * howmany_dims[r].n;
         }
+        // printf("total size: %d\n", size);
         return size;
     }
+
+    // void dump() const {
+    //     printf("sign: %d\n", sign);
+    //     printf("sign: %d\n", sign);
+    //     printf("sign: %d\n", sign);
+    //     printf("sign: %d\n", sign);
+    //     printf("sign: %d\n", sign);
+    //     printf("sign: %d\n", sign);
+    //     printf("sign: %d\n", sign);
+    //  }
 };
 
 class Runner {
@@ -240,10 +270,12 @@ class Runner {
         // the user is responsible for aligned ment of inPtr and outPtr
         // must be aligned
         // must be large enough for the FFT specified in plan_
+        // printf("pool size %d\n", planPool.size());
 
         const int tid = omp_get_num_threads();
         // run fft , number of threads is pre determined by the plan. OMP_NESTED should be true
         fftw_plan plan = getPlan(planGuru);
+
 #ifdef FFTW3_MKL
         mkl_set_num_threads_local(planGuru.nThreads);
 #endif
@@ -276,8 +308,7 @@ class Runner {
     // CHECK: buffer allocating
     void fitBuffer(const PlanGuruFFT &planGuru, ComplexT **in = nullptr, double **inReal = nullptr,
                    double **inImag = nullptr, ComplexT **out = nullptr, double **outReal = nullptr,
-                   double **outImag = nullptr) {
-        const int tid = omp_get_thread_num();
+                   double **outImag = nullptr, bool planBuffer = false) {
 
         size_t inC = 0;      // numer of elements of type C or D. not size of bytes
         size_t inDReal = 0;  // numer of elements of type C or D. not size of bytes
@@ -287,6 +318,7 @@ class Runner {
         size_t outDImag = 0; // numer of elements of type C or D. not size of bytes
 
         const size_t totalSize = planGuru.getTotalSize();
+        const int tid = omp_get_thread_num();
 
         switch (planGuru.fft_type) {
         case FFTTYPE::C2CINTER: {
@@ -313,9 +345,9 @@ class Runner {
             outDReal = totalSize;
         } break;
         case FFTTYPE::C2RSPLIT: {
-            inC = totalSize;
-            outDReal = totalSize;
-            outDImag = totalSize;
+            inDReal = totalSize;
+            inDImag = totalSize;
+            outC = totalSize;
         } break;
         case FFTTYPE::R2R: {
             inDReal = totalSize;
@@ -323,35 +355,91 @@ class Runner {
         } break;
         }
 
-        inBufC[tid].resize(inC);           // the buffer is never shrinked, passing in 0 is OK
-        outBufC[tid].resize(outC);         // the buffer is never shrinked, passing in 0 is OK
-        inBufDReal[tid].resize(inDReal);   // the buffer is never shrinked, passing in 0 is OK
-        inBufDImag[tid].resize(inDImag);   // the buffer is never shrinked, passing in 0 is OK
-        outBufDReal[tid].resize(outDReal); // the buffer is never shrinked, passing in 0 is OK
-        outBufDImag[tid].resize(outDImag); // the buffer is never shrinked, passing in 0 is OK
+        if (planBuffer == false) {
+            // for actual computation
+            inBufC[tid].resize(inC);           // the buffer is never shrinked, passing in 0 is OK
+            outBufC[tid].resize(outC);         // the buffer is never shrinked, passing in 0 is OK
+            inBufDReal[tid].resize(inDReal);   // the buffer is never shrinked, passing in 0 is OK
+            inBufDImag[tid].resize(inDImag);   // the buffer is never shrinked, passing in 0 is OK
+            outBufDReal[tid].resize(outDReal); // the buffer is never shrinked, passing in 0 is OK
+            outBufDImag[tid].resize(outDImag); // the buffer is never shrinked, passing in 0 is OK
 
-        // return buffer needed
-        if (in)
-            *in = inBufC[tid].alignedPtr;
-        if (out)
-            *out = outBufC[tid].alignedPtr;
-        if (inReal)
-            *inReal = inBufDReal[tid].alignedPtr;
-        if (inImag)
-            *inImag = inBufDImag[tid].alignedPtr;
-        if (outReal)
-            *outReal = outBufDReal[tid].alignedPtr;
-        if (outImag)
-            *outImag = outBufDImag[tid].alignedPtr;
+            // return buffer needed
+            if (planGuru.fft_type == FFTTYPE::C2CINTER || planGuru.fft_type == FFTTYPE::C2RINTER) {
+                assert(inBufC[tid].alignedPtr);
+                *in = inBufC[tid].alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CINTER || planGuru.fft_type == FFTTYPE::R2CINTER) {
+                assert(outBufC[tid].alignedPtr);
+                *out = outBufC[tid].alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::C2RSPLIT ||
+                planGuru.fft_type == FFTTYPE::R2CINTER || planGuru.fft_type == FFTTYPE::R2CSPLIT ||
+                planGuru.fft_type == FFTTYPE::R2R) {
+                assert(inBufDReal[tid].alignedPtr);
+                *inReal = inBufDReal[tid].alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::R2CSPLIT ||
+                planGuru.fft_type == FFTTYPE::C2RINTER || planGuru.fft_type == FFTTYPE::C2RSPLIT ||
+                planGuru.fft_type == FFTTYPE::R2R) {
+                assert(outBufDReal[tid].alignedPtr);
+                *outReal = outBufDReal[tid].alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::C2RSPLIT) {
+                assert(inBufDImag[tid].alignedPtr);
+                *inImag = inBufDImag[tid].alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::R2CSPLIT) {
+                assert(outBufDImag[tid].alignedPtr);
+                *outImag = outBufDImag[tid].alignedPtr;
+            }
+
+        } else {
+            // for creating plan
+            inPlanBufC.resize(inC);           // the buffer is never shrinked, passing in 0 is OK
+            outPlanBufC.resize(outC);         // the buffer is never shrinked, passing in 0 is OK
+            inPlanBufDReal.resize(inDReal);   // the buffer is never shrinked, passing in 0 is OK
+            inPlanBufDImag.resize(inDImag);   // the buffer is never shrinked, passing in 0 is OK
+            outPlanBufDReal.resize(outDReal); // the buffer is never shrinked, passing in 0 is OK
+            outPlanBufDImag.resize(outDImag); // the buffer is never shrinked, passing in 0 is OK
+
+            // return buffer needed
+            if (planGuru.fft_type == FFTTYPE::C2CINTER || planGuru.fft_type == FFTTYPE::C2RINTER) {
+                assert(inPlanBufC.alignedPtr);
+                *in = inPlanBufC.alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CINTER || planGuru.fft_type == FFTTYPE::R2CINTER) {
+                assert(outPlanBufC.alignedPtr);
+                *out = outPlanBufC.alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::C2RSPLIT ||
+                planGuru.fft_type == FFTTYPE::R2CINTER || planGuru.fft_type == FFTTYPE::R2CSPLIT ||
+                planGuru.fft_type == FFTTYPE::R2R) {
+                assert(inPlanBufDReal.alignedPtr);
+                *inReal = inPlanBufDReal.alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::R2CSPLIT ||
+                planGuru.fft_type == FFTTYPE::C2RINTER || planGuru.fft_type == FFTTYPE::C2RSPLIT ||
+                planGuru.fft_type == FFTTYPE::R2R) {
+                assert(outPlanBufDReal.alignedPtr);
+                *outReal = outPlanBufDReal.alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::C2RSPLIT) {
+                assert(inPlanBufDImag.alignedPtr);
+                *inImag = inPlanBufDImag.alignedPtr;
+            }
+            if (planGuru.fft_type == FFTTYPE::C2CSPLIT || planGuru.fft_type == FFTTYPE::R2CSPLIT) {
+                assert(outPlanBufDImag.alignedPtr);
+                *outImag = outPlanBufDImag.alignedPtr;
+            }
+        }
 
         return;
     }
 
     // allow only 1 thread running this
-    inline fftw_plan getPlan(const PlanGuruFFT &planGuru, ComplexT *in = nullptr, double *inReal = nullptr,
-                             double *inImag = nullptr, ComplexT *out = nullptr, double *outReal = nullptr,
-                             double *outImag = nullptr) {
-        // WARNING: The arrays passed by the pointers are used to create the plan.
+    fftw_plan getPlan(const PlanGuruFFT &planGuru) {
+        // use dedicated plan buffer to create plan
         // The arrays returned by the fitBuffer() routine should be fine.
 
         const unsigned flag = DEFAULTFLAG;
@@ -394,6 +482,10 @@ class Runner {
             auto &sign = planGuru.sign;
             auto &flags = planGuru.flags;
             auto &r2rKind = planGuru.r2rKind;
+
+            ComplexT *in, *out;
+            double *inReal, *outReal, *inImag, *outImag;
+            fitBuffer(planGuru, &in, &inReal, &inImag, &out, &outReal, &outImag, true);
 
             switch (planGuru.fft_type) {
             case FFTTYPE::C2CINTER:
@@ -463,10 +555,9 @@ class Runner {
                 hashCombine(result, hash<unsigned>{}(plan.howmany_dims[i].n));
                 hashCombine(result, hash<unsigned>{}(plan.howmany_dims[i].is));
                 hashCombine(result, hash<unsigned>{}(plan.howmany_dims[i].os));
+                hashCombine(result, hash<unsigned>{}(plan.r2rKind[i]));
             }
-            fftw_iodim howmany_dims[DEFAULTMAXRANK];
-
-            unsigned int nThreads = 1;
+            // printf("%u\n", result);
 
             return result;
         }
@@ -479,13 +570,23 @@ class Runner {
     // CHECK: using PlanGuruFFT as key
     std::unordered_map<PlanGuruFFT, fftw_plan, hashPlanGuruFFT> planPool; // storage of all plans
 
-    AlignedMemory<ComplexT, DEFAULTALIGN> *inBufC;  // each thread maintains its own buffer
-    AlignedMemory<ComplexT, DEFAULTALIGN> *outBufC; // each thread maintains its own buffer
-    // CHECK: allocate and deallocate the double pointers
+    // memory for actual computation
+    // each thread id has its own buffer
+    AlignedMemory<ComplexT, DEFAULTALIGN> *inBufC;    // each thread maintains its own buffer
+    AlignedMemory<ComplexT, DEFAULTALIGN> *outBufC;   // each thread maintains its own buffer
     AlignedMemory<double, DEFAULTALIGN> *inBufDReal;  // each thread maintains its own buffer
     AlignedMemory<double, DEFAULTALIGN> *outBufDReal; // each thread maintains its own buffer
     AlignedMemory<double, DEFAULTALIGN> *inBufDImag;  // each thread maintains its own buffer
     AlignedMemory<double, DEFAULTALIGN> *outBufDImag; // each thread maintains its own buffer
+
+    // memory for creating plans
+    // only one buffer is needed since plan is always created from 1 thread
+    AlignedMemory<ComplexT, DEFAULTALIGN> inPlanBufC;
+    AlignedMemory<ComplexT, DEFAULTALIGN> outPlanBufC;
+    AlignedMemory<double, DEFAULTALIGN> inPlanBufDReal;
+    AlignedMemory<double, DEFAULTALIGN> outPlanBufDReal;
+    AlignedMemory<double, DEFAULTALIGN> inPlanBufDImag;
+    AlignedMemory<double, DEFAULTALIGN> outPlanBufDImag;
 
     omp_lock_t *readLockPtr; // multi reader, one writer
     omp_lock_t writeLock;
@@ -509,6 +610,7 @@ class SafeFFT {
                        double *outImag = nullptr) {
         // a planGuru is always constructed by copy, depending on the plan passed in
         assert(runnerPtr); // the runner has been allocated.
+
         runnerPtr->runFFT(planGuru, in, inReal, inImag, out, outReal, outImag);
         return;
     }

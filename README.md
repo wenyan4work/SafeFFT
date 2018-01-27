@@ -26,16 +26,17 @@ For the same reason, I am not using a concurrent unordered_map like the one from
 2. All SafeFFT object share one Runner object, which does the real work. Only one Runner instance should exist throughout the program.
 3. The safeFFT object stores only one pointer. Its memory footprint is supposed to be small and it could be declared as a member for the user's class. 
 4. Each thread maintains its own aligned in/out buffer memory. 
-5. Link with either `libfftw3_omp` or `mkl`
+5. Link with `libfftw3_threads`, `libfftw3_omp` or `mkl`.
 6. If using MKL, define the macro FFTW3_MKL for threading control
 7. If using MKL, calling `runFFT()` from multiple threads needs careful threading control. The only working setting I figured out is: a. Setting `OMP_NUM_THREADS` to control the number of threads calling `runFFT()`. b. setting `mkl_set_num_threads_local(plan_.nThreads);` in `runFFT()` to ensure the number of threads to execute this plan. c. Setting `OMP_NESTED=true` and `MKL_DYNAMIC=false`. DO NOT set `MKL_NUM_THREADS`. 
 8. Nested threading is implemented for flexibility. For small FFTs (even those in Test1DLarge.cpp), sticking to `plan.nThreads=1` gives better performance. On my 12-core Xeon, the program Test1DLarge shows around 95% efficiency with 10 cores. It is the user's duty to think about it and get good performance.
 9. `fftw3_threads` uses pthread rather than openmp thread (at least in my understanding). In my tests on a Mac the nested threading control still works well.
+10. The code is internally implemented with the FFTW Guru functions. Parameters in the PlanGuruFFT struct are directly passed to FFTW so any functionalities of FFTW should be supported. Note that MKL does not implement all functions of FFTW. Read the documents first.
 
 ## Possible Issues
 1. I cannot guarantee the naive implementation of RWLock with omp_lock is optimal or even correct, although it works fine in my tests.
 2. The effect of mixing with other thread models is unknown.
+3. The Guru interface is not fully tested. Please perform your own tests before using it, and please report any bugs you find.
 
 ## Possible Extensions 
 1. The code is probably ugly and I cannot guarentee it is bug free. Comments, forks, and bug reports are welcome.
-2. The code currently implements interfaces for simple 1D/2D/3D complex DFTs only. If you need other transforms like r2c,c2r, etc, the code should be fairly simple to extend.
