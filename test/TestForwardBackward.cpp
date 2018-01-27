@@ -31,8 +31,8 @@ void testSafeFFT() {
         backward.sign = -1;
 
         // get in out buffer
-        safefft::ComplexPtrT in, out;
-        safefft::SafeFFT::fitBuffer(forward, in, out);
+        safefft::ComplexT *in, *out;
+        safefft::SafeFFT::fitBuffer(forward, &in, nullptr, nullptr, &out, nullptr, nullptr);
 
         for (int i = 0; i < forward.n0; i++) {
             in[i][0] = i + 1;
@@ -40,10 +40,10 @@ void testSafeFFT() {
         }
 
         // forward
-        SafeFFT::runFFT(forward, in, out);
+        SafeFFT::runFFT(forward, in, nullptr, nullptr, out, nullptr, nullptr);
 
         // backward
-        SafeFFT::runFFT(backward, out, in);
+        SafeFFT::runFFT(backward, out, nullptr, nullptr, in, nullptr, nullptr);
 
         // compare error of real part
         error = 0;

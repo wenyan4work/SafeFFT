@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -15,11 +16,11 @@
 
 #include "AlignedMemory.hpp"
 
-#define DEFAULTALIGN 32   // number of bytes
-#define DEFAULTSIZE 1024  // number of ComplexT
-#define DEFAULTPLANTIME 2 // 2 seconds of planning time
-#define DEFAULTMAXRANK 3  // max 3 dimensional
-#define DEFAULTSIGN (-1)  // sign of Fourier transform
+#define DEFAULTALIGN 32            // number of bytes
+#define DEFAULTSIZE 1024           // number of ComplexT
+#define DEFAULTPLANTIME 2          // 2 seconds of planning time
+#define DEFAULTMAXRANK 3           // max 3 dimensional
+#define DEFAULTSIGN (FFTW_FORWARD) // sign of Fourier transform
 
 #define DEFAULTFLAG (FFTW_MEASURE | FFTW_DESTROY_INPUT)
 // with this flag, the input array will be destroyed, and input and output must not overlap
@@ -27,51 +28,52 @@
 namespace safefft {
 
 using ComplexT = fftw_complex;
-using ComplexPtrT = fftw_complex *;
 
-enum COMPLEXSTORAGE { INTERLEAVE, SPLIT };
-
-enum FFTTYPE { C2C, R2C, C2R, R2R };
+// INTER for interleave strorage, SPLIT for split storage
+enum FFTTYPE { C2CINTER, C2CSPLIT, R2CINTER, R2CSPLIT, C2RINTER, C2RSPLIT, R2R };
 
 // simple FFT interface
 struct PlanFFT {
     int n0 = 1, n1 = 1, n2 = 1;
     int sign = DEFAULTSIGN;
     unsigned int nThreads = 1;
-
-    bool operator==(const PlanFFT &other) const {
-        return (n0 == other.n0 && n1 == other.n1 && n2 == other.n2 && sign == other.sign && nThreads == other.nThreads);
-    }
 };
+
+// For other types, define a plan struct and define a copy constructor in PlanGuruFFT
 
 // for the guru interface
 struct PlanGuruFFT {
     int rank = DEFAULTMAXRANK;
-    fftw_iodim iodim[DEFAULTMAXRANK];
+    fftw_iodim dims[DEFAULTMAXRANK];
+
     int howmany_rank = DEFAULTMAXRANK;
     fftw_iodim howmany_dims[DEFAULTMAXRANK];
+
+    fftw_r2r_kind r2rKind[DEFAULTMAXRANK];
+
     int sign = DEFAULTSIGN;
     unsigned flags = DEFAULTFLAG;
-    COMPLEXSTORAGE complex_storage = COMPLEXSTORAGE::INTERLEAVE;
-    FFTTYPE fft_type = FFTTYPE::C2C;
+
+    FFTTYPE fft_type = FFTTYPE::C2CINTER; // default to C2C interleave
+
     unsigned int nThreads = 1;
 
     // DEFAULT CONSTRUCTOR
-    // TODO: clear up the meanings of iodim and howmany_dim
+    // CHECK: clear up the meanings of iodim and howmany_dim
     PlanGuruFFT() {
         rank = DEFAULTMAXRANK;
         howmany_rank = DEFAULTMAXRANK;
         sign = DEFAULTSIGN;
         flags = DEFAULTFLAG;
-        complex_storage = COMPLEXSTORAGE::INTERLEAVE;
-        fft_type = FFTTYPE::C2C;
+        fft_type = FFTTYPE::C2CINTER;
         for (int i = 0; i < DEFAULTMAXRANK; i++) {
-            iodim[i].n = 1;
-            iodim[i].is = 0;
-            iodim[i].os = 0;
-            howmany_dims[i].n = 1;
-            howmany_dims[i].is = 0;
-            howmany_dims[i].os = 0;
+            dims[i].n = 1;          // dimension in this rank
+            dims[i].is = 1;         // input stride
+            dims[i].os = 1;         // output strid
+            howmany_dims[i].n = 1;  // number of ffts in this rank
+            howmany_dims[i].is = 0; // input distance of each fft in this rank
+            howmany_dims[i].os = 0; // output distance of each fft in this rank
+            r2rKind[i] = FFTW_R2HC; // not used in most cases except for r2r transforms
         }
         nThreads = 1;
     }
@@ -81,61 +83,132 @@ struct PlanGuruFFT {
     PlanGuruFFT &operator=(const PlanGuruFFT &) = default;
     PlanGuruFFT &operator=(PlanGuruFFT &&) = default;
 
-    // TODO:copy from SimplePlan
-    PlanGuruFFT(const PlanFFT &simplePlan) {
-        rank = 3;
-        howmany_rank = 3;
+    bool operator==(const PlanGuruFFT &other) const {
+        if (rank == other.rank && howmany_rank == other.howmany_rank && sign == other.sign && flags == other.flags &&
+            fft_type == other.fft_type && nThreads == other.nThreads) {
+            bool result = true;
+            for (int i = 0; i < DEFAULTMAXRANK; i++) {
+                result = result && (dims[i].n == other.dims[i].n);
+                result = result && (dims[i].is == other.dims[i].is);
+                result = result && (dims[i].os == other.dims[i].os);
+                result = result && (howmany_dims[i].n == other.howmany_dims[i].n);
+                result = result && (howmany_dims[i].is == other.howmany_dims[i].is);
+                result = result && (howmany_dims[i].os == other.howmany_dims[i].os);
+                result = result && (r2rKind[i] == other.r2rKind[i]);
+                if (result == false) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // CHECK: check copy from SimplePlan , single 3D C2C
+    PlanGuruFFT(const PlanFFT &simplePlan) : PlanGuruFFT() { // first set the default values
         sign = simplePlan.sign;
         flags = DEFAULTFLAG;
-        complex_storage = COMPLEXSTORAGE::INTERLEAVE;
-        fft_type = FFTTYPE::C2C;
-        iodim[0].n = simplePlan.n0;
-        iodim[1].n = simplePlan.n1;
-        iodim[2].n = simplePlan.n2;
-
-        for (int i = 0; i < 3; i++) {
-            iodim[i].is = 0;
-            iodim[i].os = 0;
-            // TODO: check this
-            howmany_dims[i].n = 1;
-            howmany_dims[i].is = 0;
-            howmany_dims[i].os = 0;
-        }
+        fft_type = FFTTYPE::C2CINTER;
         nThreads = simplePlan.nThreads;
+
+        // FFTW manual page 35: for a single transform, set howmany_rank=0
+        howmany_rank = 0;
+
+        rank = 3;
+        dims[0].n = simplePlan.n0;
+        dims[1].n = simplePlan.n1;
+        dims[2].n = simplePlan.n2;
+
+
+        // set stride for row-major array
+        // Ref FFTW manual apge 35
+        dims[2].is = 1;
+        dims[2].os = 1;
+        dims[1].is = dims[2].n * dims[2].is;
+        dims[1].os = dims[2].n * dims[2].os;
+        dims[0].is = dims[1].n * dims[1].is;
+        dims[0].os = dims[1].n * dims[1].os;
+    }
+
+    size_t getSingleSize() const {
+        // the size large enough to hold the input (or output) data
+        // for C2C, this is the actual size needed
+        // For R2C/C2R transforms, this is LARGER than the actual size needed
+        // accurate size depends on the underlying actual lib used (fftw, mkl)
+        // determining the actual accurate size is tediouly complicated
+        size_t size = 1;
+        for (int r = 0; r < rank; r++) {
+            size = size * dims[r].n;
+        }
+        return size;
+    }
+
+    size_t getTotalSize() const {
+        size_t size = getSingleSize();
+        for (int r = 0; r < howmany_rank; r++) {
+            size = size * howmany_dims[r].n;
+        }
+        return size;
     }
 };
 
 class Runner {
   public:
     Runner(size_t size) {
-        // allocate aligned memory
-        const int nMaxThreads = omp_get_max_threads();
-        inbuf = new AlignedMemory<ComplexT, DEFAULTALIGN>[nMaxThreads];
-        outbuf = new AlignedMemory<ComplexT, DEFAULTALIGN>[nMaxThreads];
+// just a safe guard
+#pragma omp single
+        {
+            // allocate aligned memory
+            const int nMaxThreads = omp_get_max_threads();
+            inBufC = new AlignedMemory<ComplexT, DEFAULTALIGN>[nMaxThreads];
+            outBufC = new AlignedMemory<ComplexT, DEFAULTALIGN>[nMaxThreads];
+            inBufDReal = new AlignedMemory<double, DEFAULTALIGN>[nMaxThreads];
+            outBufDReal = new AlignedMemory<double, DEFAULTALIGN>[nMaxThreads];
+            inBufDImag = new AlignedMemory<double, DEFAULTALIGN>[nMaxThreads];
+            outBufDImag = new AlignedMemory<double, DEFAULTALIGN>[nMaxThreads];
 
-        for (int i = 0; i < nMaxThreads; i++) {
-            inbuf[i].resize(size);
-            outbuf[i].resize(size);
+            for (int i = 0; i < nMaxThreads; i++) {
+                inBufC[i].resize(size);
+                outBufC[i].resize(size);
+                inBufDReal[i].resize(size);
+                outBufDReal[i].resize(size);
+                inBufDImag[i].resize(size);
+                outBufDImag[i].resize(size);
+            }
+
+            readLockPtr = new omp_lock_t[nMaxThreads];
+            for (int i = 0; i < nMaxThreads; i++) {
+                omp_init_lock(&(readLockPtr[i]));
+            }
+            omp_init_lock(&writeLock);
+            fftw_init_threads();
+            fftw_set_timelimit(DEFAULTPLANTIME);
         }
-
-        readLockPtr = new omp_lock_t[nMaxThreads];
-        for (int i = 0; i < nMaxThreads; i++) {
-            omp_init_lock(&(readLockPtr[i]));
-        }
-        omp_init_lock(&writeLock);
-
-        fftw_init_threads();
-        fftw_set_timelimit(DEFAULTPLANTIME);
     }
 
     ~Runner() {
         const size_t nMaxThreads = omp_get_max_threads();
         // deallocation of buffer handled by destructor of AlignedMemory;
-        if (inbuf) {
-            delete[] inbuf;
+        if (inBufC) {
+            delete[] inBufC;
         }
-        if (outbuf) {
-            delete[] outbuf;
+        if (outBufC) {
+            delete[] outBufC;
+        }
+
+        if (inBufDReal) {
+            delete[] inBufDReal;
+        }
+        if (outBufDReal) {
+            delete[] outBufDReal;
+        }
+
+        if (inBufDImag) {
+            delete[] inBufDImag;
+        }
+        if (outBufDImag) {
+            delete[] outBufDImag;
         }
         // free fftw plan
         clearPool();
@@ -161,66 +234,136 @@ class Runner {
         planPool.clear();
     }
 
-    void runFFT(const PlanFFT &plan_, ComplexT *inPtr, ComplexT *outPtr) {
+    // CHECK:run fft
+    void runFFT(const PlanGuruFFT &planGuru, ComplexT *in = nullptr, double *inReal = nullptr, double *inImag = nullptr,
+                ComplexT *out = nullptr, double *outReal = nullptr, double *outImag = nullptr) {
         // the user is responsible for aligned ment of inPtr and outPtr
         // must be aligned
         // must be large enough for the FFT specified in plan_
 
         const int tid = omp_get_num_threads();
         // run fft , number of threads is pre determined by the plan. OMP_NESTED should be true
-        fftw_plan plan = getPlan(plan_);
+        fftw_plan plan = getPlan(planGuru);
 #ifdef FFTW3_MKL
-        mkl_set_num_threads_local(plan_.nThreads);
+        mkl_set_num_threads_local(planGuru.nThreads);
 #endif
-        // TODO: add other FFT types C2R,R2C,R2R,Interleave,split
-        fftw_execute_dft(plan, inPtr, outPtr);
+        // execute with new array interface
+        switch (planGuru.fft_type) {
+        case FFTTYPE::C2CINTER:
+            fftw_execute_dft(plan, in, out);
+            break;
+        case FFTTYPE::C2CSPLIT:
+            fftw_execute_split_dft(plan, inReal, inImag, outReal, outImag);
+            break;
+        case FFTTYPE::R2CINTER:
+            fftw_execute_dft_r2c(plan, inReal, out);
+            break;
+        case FFTTYPE::R2CSPLIT:
+            fftw_execute_split_dft_r2c(plan, inReal, outReal, outImag);
+            break;
+        case FFTTYPE::C2RINTER:
+            fftw_execute_dft_c2r(plan, in, outReal);
+            break;
+        case FFTTYPE::C2RSPLIT:
+            fftw_execute_split_dft_c2r(plan, inReal, inImag, outReal);
+            break;
+        case FFTTYPE::R2R:
+            fftw_execute_r2r(plan, inReal, outReal);
+            break;
+        }
     }
 
-    // TODO:run fft
-    void runC2CInterleave(const PlanGuruFFT &planGuru, ComplexT **in, ComplexT **out) {
+    // CHECK: buffer allocating
+    void fitBuffer(const PlanGuruFFT &planGuru, ComplexT **in = nullptr, double **inReal = nullptr,
+                   double **inImag = nullptr, ComplexT **out = nullptr, double **outReal = nullptr,
+                   double **outImag = nullptr) {
         const int tid = omp_get_thread_num();
-        size_t nT = 1;
-        for(int i=0;i<DEFAULTMAXRANK;i++){}
 
-        inbuf[tid].resize(nT);
-        outbuf[tid].resize(nT);
+        size_t inC = 0;      // numer of elements of type C or D. not size of bytes
+        size_t inDReal = 0;  // numer of elements of type C or D. not size of bytes
+        size_t inDImag = 0;  // numer of elements of type C or D. not size of bytes
+        size_t outC = 0;     // numer of elements of type C or D. not size of bytes
+        size_t outDReal = 0; // numer of elements of type C or D. not size of bytes
+        size_t outDImag = 0; // numer of elements of type C or D. not size of bytes
+
+        const size_t totalSize = planGuru.getTotalSize();
+
+        switch (planGuru.fft_type) {
+        case FFTTYPE::C2CINTER: {
+            inC = totalSize;
+            outC = totalSize;
+        } break;
+        case FFTTYPE::C2CSPLIT: {
+            inDReal = totalSize;
+            inDImag = totalSize;
+            outDReal = totalSize;
+            outDImag = totalSize;
+        } break;
+        case FFTTYPE::R2CINTER: {
+            inDReal = totalSize;
+            outC = totalSize;
+        } break;
+        case FFTTYPE::R2CSPLIT: {
+            inDReal = totalSize;
+            outDReal = totalSize;
+            outDImag = totalSize;
+        } break;
+        case FFTTYPE::C2RINTER: {
+            inC = totalSize;
+            outDReal = totalSize;
+        } break;
+        case FFTTYPE::C2RSPLIT: {
+            inC = totalSize;
+            outDReal = totalSize;
+            outDImag = totalSize;
+        } break;
+        case FFTTYPE::R2R: {
+            inDReal = totalSize;
+            outDReal = totalSize;
+        } break;
+        }
+
+        inBufC[tid].resize(inC);           // the buffer is never shrinked, passing in 0 is OK
+        outBufC[tid].resize(outC);         // the buffer is never shrinked, passing in 0 is OK
+        inBufDReal[tid].resize(inDReal);   // the buffer is never shrinked, passing in 0 is OK
+        inBufDImag[tid].resize(inDImag);   // the buffer is never shrinked, passing in 0 is OK
+        outBufDReal[tid].resize(outDReal); // the buffer is never shrinked, passing in 0 is OK
+        outBufDImag[tid].resize(outDImag); // the buffer is never shrinked, passing in 0 is OK
+
+        // return buffer needed
+        if (in)
+            *in = inBufC[tid].alignedPtr;
+        if (out)
+            *out = outBufC[tid].alignedPtr;
+        if (inReal)
+            *inReal = inBufDReal[tid].alignedPtr;
+        if (inImag)
+            *inImag = inBufDImag[tid].alignedPtr;
+        if (outReal)
+            *outReal = outBufDReal[tid].alignedPtr;
+        if (outImag)
+            *outImag = outBufDImag[tid].alignedPtr;
+
+        return;
     }
-    void runR2CInterleave(const PlanGuruFFT &planGuru, double **in, ComplexT **out);
-    void runC2RInterleave(const PlanGuruFFT &planGuru, ComplexT **in, double **out);
-    void runR2R(const PlanGuruFFT &planGuru, double **in, double **out);
-
-    void runC2CSplit(const PlanGuruFFT &planGuru, double **inReal, double **inImag, double **outReal, double **outImag);
-    void runR2CSplit(const PlanGuruFFT &planGuru, double **in, double **outReal, double **outImag);
-    void runC2RSplit(const PlanGuruFFT &planGuru, double **inReal, double **inImag, double **outImag);
-
-    // TODO: buffer allocating
-    void fitBufferC2CInterleave(const PlanGuruFFT &planGuru, ComplexT **in, ComplexT **out);
-    void fitBufferR2CInterleave(const PlanGuruFFT &planGuru, double **in, ComplexT **out);
-    void fitBufferC2RInterleave(const PlanGuruFFT &planGuru, ComplexT **in, double **out);
-    void fitBufferR2R(const PlanGuruFFT &planGuru, double **in, double **out);
-
-    void fitBufferC2CSplit(const PlanGuruFFT &planGuru, double **inReal, double **inImag, double **outReal,
-                           double **outImag);
-    void fitBufferR2CSplit(const PlanGuruFFT &planGuru, double **in, double **outReal, double **outImag);
-    void fitBufferC2RSplit(const PlanGuruFFT &planGuru, double **inReal, double **inImag, double **outImag);
 
     // allow only 1 thread running this
-    inline fftw_plan getPlan(const PlanFFT &plan_) {
-        const unsigned flag = DEFAULTFLAG;
+    inline fftw_plan getPlan(const PlanGuruFFT &planGuru, ComplexT *in = nullptr, double *inReal = nullptr,
+                             double *inImag = nullptr, ComplexT *out = nullptr, double *outReal = nullptr,
+                             double *outImag = nullptr) {
+        // WARNING: The arrays passed by the pointers are used to create the plan.
+        // The arrays returned by the fitBuffer() routine should be fine.
 
+        const unsigned flag = DEFAULTFLAG;
         const int tid = omp_get_thread_num();
         const size_t nMaxThreads = omp_get_max_threads();
-
-        const int n0 = plan_.n0;
-        const int n1 = plan_.n1;
-        const int n2 = plan_.n2;
 
         fftw_plan plan;
 
         // multiple reader
         omp_set_lock(&(readLockPtr[tid]));
 
-        auto search = planPool.find(plan_);
+        auto search = planPool.find(planGuru);
         if (search != planPool.end()) {
             plan = search->second;
             omp_unset_lock(&(readLockPtr[tid]));
@@ -228,13 +371,6 @@ class Runner {
             omp_unset_lock(&(readLockPtr[tid]));
             // actual write
             // create a new plan
-            // ensure plan is large enough
-            inbuf[tid].resize((n0) * (n1) * (n2));
-            outbuf[tid].resize((n0) * (n1) * (n2));
-
-            // use internal buffer to create the plan
-            ComplexT *in = inbuf[tid].alignedPtr;
-            ComplexT *out = outbuf[tid].alignedPtr;
 
             // only one writer
             omp_set_lock(&writeLock);
@@ -245,21 +381,55 @@ class Runner {
 
 #ifdef FFTW3_MKL // The document here is not accurate. the fftw_plan_with_nthreads() must be called
                  // https://software.intel.com/en-us/articles/how-to-set-number-of-users-threads-while-using-intel-mkl-fftw3-wrappers-3
-            fftw3_mkl.number_of_user_threads = plan_.nThreads;
-            fftw_plan_with_nthreads(plan_.nThreads);
+            fftw3_mkl.number_of_user_threads = planGuru.nThreads;
+            fftw_plan_with_nthreads(planGuru.nThreads);
 #else
-            fftw_plan_with_nthreads(plan_.nThreads);
+            fftw_plan_with_nthreads(planGuru.nThreads);
 #endif
-            // TODO: plan with guru interface
-            if (n1 == 1 && n2 == 1) {
-                plan = fftw_plan_dft_1d(n0, in, out, plan_.sign, flag);
-            } else if (n2 == 1) {
-                plan = fftw_plan_dft_2d(n0, n1, in, out, plan_.sign, flag);
-            } else {
-                plan = fftw_plan_dft_3d(n0, n1, n2, in, out, plan_.sign, flag);
+            // execute with new array interface
+            auto &rank = planGuru.rank;
+            auto &dims = planGuru.dims;
+            auto &howmany_rank = planGuru.howmany_rank;
+            auto &howmany_dims = planGuru.howmany_dims;
+            auto &sign = planGuru.sign;
+            auto &flags = planGuru.flags;
+            auto &r2rKind = planGuru.r2rKind;
+
+            switch (planGuru.fft_type) {
+            case FFTTYPE::C2CINTER:
+                plan = fftw_plan_guru_dft(rank, dims, howmany_rank, howmany_dims, in, out, sign, flags);
+                break;
+            case FFTTYPE::C2CSPLIT:
+                // ref FFTW manual p36, there is no sign parameter in guru_split_dft. always in FFTW_FORWARD mode
+                plan = fftw_plan_guru_split_dft(rank, dims, howmany_rank, howmany_dims, inReal, inImag, outReal,
+                                                outImag, flags);
+                break;
+            case FFTTYPE::R2CINTER:
+                // p.37 r2c always FORWARD
+                plan = fftw_plan_guru_dft_r2c(rank, dims, howmany_rank, howmany_dims, inReal, out, flags);
+                break;
+            case FFTTYPE::R2CSPLIT:
+                // p.37 r2c always FORWARD
+                plan = fftw_plan_guru_split_dft_r2c(rank, dims, howmany_rank, howmany_dims, inReal, outReal, outImag,
+                                                    flags);
+                break;
+            case FFTTYPE::C2RINTER:
+                // p.37 c2r always BACKWARD
+                plan = fftw_plan_guru_dft_c2r(rank, dims, howmany_rank, howmany_dims, in, outReal, flags);
+                break;
+            case FFTTYPE::C2RSPLIT:
+                // p.37 c2r always BACKWARD
+                plan = fftw_plan_guru_split_dft_c2r(rank, dims, howmany_rank, howmany_dims, inReal, inImag, outReal,
+                                                    flags);
+                break;
+            case FFTTYPE::R2R:
+                // p.37 for r2r there is FORWARD or BACKWARD. directly specify fftw_r2r_kind
+                plan = fftw_plan_guru_r2r(rank, dims, howmany_rank, howmany_dims, inReal, outReal, r2rKind, flags);
+                break;
             }
+
             // put plan to planPool
-            planPool[plan_] = plan;
+            planPool[planGuru] = plan;
 
             // release all reader lock, including self
             for (int i = 0; i < nMaxThreads; i++) {
@@ -276,30 +446,46 @@ class Runner {
 
   private:
     // custom hash function for PlanFFT
-    struct hashPlanFFT {
-        std::size_t operator()(const PlanFFT &plan) const {
+    struct hashPlanGuruFFT {
+        std::size_t operator()(const PlanGuruFFT &plan) const {
             using std::hash;
-            using std::size_t;
-            using std::string;
 
-            // Compute individual hash values for first,
-            // second and third and combine them using XOR
-            // and bit shifting:
-            // TODO: hash for PlanGuruFFT struct using hash::combine
-            return std::hash<int>{}(plan.sign * (plan.n0 + 1) * (plan.n1 + 1) * (plan.n2 + 1)) ^
-                   (std::hash<size_t>{}(plan.nThreads) << 1);
+            size_t result = hash<int>{}(plan.fft_type);
+            hashCombine(result, hash<int>{}(plan.rank));
+            hashCombine(result, hash<int>{}(plan.howmany_rank));
+            hashCombine(result, hash<int>{}(plan.sign));
+            hashCombine(result, hash<unsigned>{}(plan.flags));
+            hashCombine(result, hash<unsigned>{}(plan.nThreads));
+            for (int i = 0; i < DEFAULTMAXRANK; i++) {
+                hashCombine(result, hash<unsigned>{}(plan.dims[i].n));
+                hashCombine(result, hash<unsigned>{}(plan.dims[i].is));
+                hashCombine(result, hash<unsigned>{}(plan.dims[i].os));
+                hashCombine(result, hash<unsigned>{}(plan.howmany_dims[i].n));
+                hashCombine(result, hash<unsigned>{}(plan.howmany_dims[i].is));
+                hashCombine(result, hash<unsigned>{}(plan.howmany_dims[i].os));
+            }
+            fftw_iodim howmany_dims[DEFAULTMAXRANK];
+
+            unsigned int nThreads = 1;
+
+            return result;
         }
+
+        // combine hash
+        void hashCombine(size_t &lhs, const size_t &rhs) const { lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2); }
     };
 
     // storage of fftw_plan
-    // TODO: using PlanGuruFFT as key
-    std::unordered_map<PlanFFT, fftw_plan, hashPlanFFT> planPool; // storage of all plans
+    // CHECK: using PlanGuruFFT as key
+    std::unordered_map<PlanGuruFFT, fftw_plan, hashPlanGuruFFT> planPool; // storage of all plans
 
-    AlignedMemory<ComplexT, DEFAULTALIGN> *inbuf;  // each thread maintains its own buffer
-    AlignedMemory<ComplexT, DEFAULTALIGN> *outbuf; // each thread maintains its own buffer
-    // TODO: allocate and deallocate the double pointers
-    AlignedMemory<double, DEFAULTALIGN> *inbuf;  // each thread maintains its own buffer
-    AlignedMemory<double, DEFAULTALIGN> *outbuf; // each thread maintains its own buffer
+    AlignedMemory<ComplexT, DEFAULTALIGN> *inBufC;  // each thread maintains its own buffer
+    AlignedMemory<ComplexT, DEFAULTALIGN> *outBufC; // each thread maintains its own buffer
+    // CHECK: allocate and deallocate the double pointers
+    AlignedMemory<double, DEFAULTALIGN> *inBufDReal;  // each thread maintains its own buffer
+    AlignedMemory<double, DEFAULTALIGN> *outBufDReal; // each thread maintains its own buffer
+    AlignedMemory<double, DEFAULTALIGN> *inBufDImag;  // each thread maintains its own buffer
+    AlignedMemory<double, DEFAULTALIGN> *outBufDImag; // each thread maintains its own buffer
 
     omp_lock_t *readLockPtr; // multi reader, one writer
     omp_lock_t writeLock;
@@ -317,53 +503,24 @@ class SafeFFT {
     SafeFFT &operator=(const SafeFFT &) = default;
     SafeFFT &operator=(SafeFFT &&) = default;
 
-    // runFFT
-    static void runFFT(const PlanFFT &plan, ComplexT *in, ComplexT *out) {
+    // CHECK:run fft
+    static void runFFT(const PlanGuruFFT planGuru, ComplexT *in = nullptr, double *inReal = nullptr,
+                       double *inImag = nullptr, ComplexT *out = nullptr, double *outReal = nullptr,
+                       double *outImag = nullptr) {
+        // a planGuru is always constructed by copy, depending on the plan passed in
         assert(runnerPtr); // the runner has been allocated.
-        runC2CInterleave(plan, in, out);
+        runnerPtr->runFFT(planGuru, in, inReal, inImag, out, outReal, outImag);
+        return;
     }
 
-    static void runC2CInterleave(const PlanGuruFFT &plan, ComplexT *in, ComplexT *out) {}
-    static void runR2CInterleave(const PlanGuruFFT &plan, double *in, ComplexT *out);
-    static void runC2RInterleave(const PlanGuruFFT &plan, ComplexT *in, double *out);
-    static void runR2R(const PlanGuruFFT &plan, double *in, double *out);
-
-    static void runC2CSplit(const PlanGuruFFT &plan, double *inReal, double *inImag, double *outReal, double *outImag);
-    static void runR2CSplit(const PlanGuruFFT &plan, double *in, double *outReal, double *outImag);
-    static void runC2RSplit(const PlanGuruFFT &plan, double *inReal, double *inImag, double *outImag);
-
-    // return in/out large enough for the plan
-    // operate only on the buffer for this thread
-    static void fitBuffer(const PlanFFT &plan, ComplexT **in, ComplexT **out) { fitBufferC2CInterleave(plan, in, out); }
-
-    static void fitBufferC2CInterleave(const PlanGuruFFT &plan, ComplexT **in, ComplexT **out) {
-        runnerPtr->fitBufferC2CInterleave(plan, in, out);
+    // CHECK: buffer allocating
+    static void fitBuffer(const PlanGuruFFT planGuru, ComplexT **in = nullptr, double **inReal = nullptr,
+                          double **inImag = nullptr, ComplexT **out = nullptr, double **outReal = nullptr,
+                          double **outImag = nullptr) {
+        assert(runnerPtr); // the runner has been allocated.
+        runnerPtr->fitBuffer(planGuru, in, inReal, inImag, out, outReal, outImag);
+        return;
     }
-    static void fitBufferR2CInterleave(const PlanGuruFFT &plan, double **in, ComplexT **out) {
-        runnerPtr->fitBufferR2CInterleave(plan, in, out);
-    }
-    static void fitBufferC2RInterleave(const PlanGuruFFT &plan, ComplexT **in, double **out) {
-        runnerPtr->fitBufferC2RInterleave(plan, in, out);
-    }
-    static void fitBufferR2R(const PlanGuruFFT &plan, double **in, double **out) {
-        runnerPtr->fitBufferR2R(plan, in, out);
-    }
-
-    static void fitBufferC2CSplit(const PlanGuruFFT &plan, double **inReal, double **inImag, double **outReal,
-                                  double **outImag) {
-        runnerPtr->fitBufferC2CSplit(plan, inReal, inImag, outReal, outImag);
-    }
-    static void fitBufferR2CSplit(const PlanGuruFFT &plan, double **in, double **outReal, double **outImag) {
-
-        runnerPtr->fitBufferR2CSplit(plan, in, outReal, outImag);
-    }
-    static void fitBufferC2RSplit(const PlanGuruFFT &plan, double **inReal, double **inImag, double **out) {
-
-        runnerPtr->fitBufferC2RSplit(plan, inReal, inImag, out);
-    }
-
-    // TODO: test clear the hash table
-    static void clearPool() { runnerPtr->clearPool(); }
 
     static void init() { runnerPtr = new Runner(DEFAULTSIZE); }
 
@@ -371,7 +528,7 @@ class SafeFFT {
 
   private:
     static Runner *runnerPtr;
-};
+}; // namespace safefft
 
 Runner *SafeFFT::runnerPtr = nullptr;
 
