@@ -25,11 +25,11 @@ INC = \
 
 TARGET_BIN = \
        $(BINDIR)/TestForwardBackward \
-       $(BINDIR)/Test1DSmall \
-       $(BINDIR)/Test1DLarge \
-       $(BINDIR)/Test2DSmall \
-       $(BINDIR)/Test2DLarge \
-       $(BINDIR)/Test3DSmall
+    #    $(BINDIR)/Test1DSmall \
+    #    $(BINDIR)/Test1DLarge \
+    #    $(BINDIR)/Test2DSmall \
+    #    $(BINDIR)/Test2DLarge \
+    #    $(BINDIR)/Test3DSmall
 
 all : $(TARGET_BIN)
 
