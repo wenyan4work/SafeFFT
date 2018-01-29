@@ -39,6 +39,12 @@ struct PlanFFT {
     unsigned int nThreads = 1;
 };
 
+struct PlanR2C {
+    int n0 = 1, n1 = 1, n2 = 1;
+    int sign = DEFAULTSIGN;
+    unsigned int nThreads = 1;
+};
+
 // For other types, define a plan struct and define a copy constructor in PlanGuruFFT
 
 // for the guru interface
@@ -115,17 +121,32 @@ struct PlanGuruFFT {
         // FFTW manual page 35: for a single transform, set howmany_rank=0
         howmany_rank = 0;
 
-        if (simplePlan.n1 == 1 && simplePlan.n2 == 1) {
+        setDims(simplePlan.n0, simplePlan.n1, simplePlan.n2);
+    }
+
+    PlanGuruFFT(const PlanR2C &r2c) : PlanGuruFFT() { // first set the default values
+        sign = r2c.sign;
+        flags = DEFAULTFLAG;
+        fft_type = FFTTYPE::R2CINTER;
+        nThreads = r2c.nThreads;
+
+        // FFTW manual page 35: for a single transform, set howmany_rank=0
+        howmany_rank = 0;
+        setDims(r2c.n0, r2c.n1, r2c.n2);
+    }
+
+    void setDims(const int &n0, const int &n1, const int &n2) {
+        if (n1 == 1 && n2 == 1) {
             // 1d
             rank = 1;
-            dims[0].n = simplePlan.n0;
+            dims[0].n = n0;
             dims[0].is = 1;
             dims[0].os = 1;
-        } else if (simplePlan.n2 == 1) {
+        } else if (n2 == 1) {
             // 2d
             rank = 2;
-            dims[0].n = simplePlan.n0;
-            dims[1].n = simplePlan.n1;
+            dims[0].n = n0;
+            dims[1].n = n1;
             // set stride for row-major array
             // Ref FFTW manual page 35
             dims[1].is = 1;
@@ -135,9 +156,9 @@ struct PlanGuruFFT {
         } else {
             // 3d
             rank = 3;
-            dims[0].n = simplePlan.n0;
-            dims[1].n = simplePlan.n1;
-            dims[2].n = simplePlan.n2;
+            dims[0].n = n0;
+            dims[1].n = n1;
+            dims[2].n = n2;
             // set stride for row-major array
             // Ref FFTW manual page 35
             dims[2].is = 1;
@@ -171,16 +192,6 @@ struct PlanGuruFFT {
         // printf("total size: %d\n", size);
         return size;
     }
-
-    // void dump() const {
-    //     printf("sign: %d\n", sign);
-    //     printf("sign: %d\n", sign);
-    //     printf("sign: %d\n", sign);
-    //     printf("sign: %d\n", sign);
-    //     printf("sign: %d\n", sign);
-    //     printf("sign: %d\n", sign);
-    //     printf("sign: %d\n", sign);
-    //  }
 };
 
 class Runner {
