@@ -1,6 +1,6 @@
 CXX=mpicxx
 
-# for mkl and intel compiler
+# for mkl 
 FFTINC= -DFFTW3_MKL -I$(MKLROOT)/include/fftw
 FFTLIB= -lmkl_rt
 
@@ -8,7 +8,12 @@ FFTLIB= -lmkl_rt
 #FFTINC= -I/path_to_fftw3.h
 #FFTLIB= -L/path_to_libfftw3 -lfftw3_omp -lfftw3 # or -lfftw3_threads -lfftw3  
 
+# for icpc + mkl on linux
+# CXXFLAGS= $(FFTINC) -std=c++11 -qopenmp -O3 -xcore-avx2 -axcore-avx512 -DNDEBUG
+
+# for clang + mkl on mac
 CXXFLAGS= $(FFTINC) -std=c++11 -fopenmp=libiomp5 -O3 -march=native -DNDEBUG
+
 LDLIBS= $(FFTLIB) $(CXXFLAGS)
 
 RM = rm -f
