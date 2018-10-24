@@ -11,7 +11,7 @@
 #define WORKNUMBER 100000
 
 void benchSafeFFT() {
-    safefft::SafeFFT myFFT;
+    using namespace safefft;
     const int workNumber = WORKNUMBER;
     // a list of FFTs to run
     std::random_device rd;  // Will be used to obtain a seed for the random number engine
@@ -20,7 +20,6 @@ void benchSafeFFT() {
 
     struct FFT {
         safefft::PlanR2C myPlan;
-        safefft::SafeFFT myFFT;
     };
 
     std::vector<FFT> work(workNumber);
@@ -43,12 +42,12 @@ void benchSafeFFT() {
         safefft::ComplexT *out = nullptr;
         double *in = nullptr;
         // printf("%u,%u\n", in, out);
-        work[i].myFFT.fitBuffer(work[i].myPlan, nullptr, &in, nullptr, &out, nullptr, nullptr); // contain garbage data
+        SafeFFT::fitBuffer(work[i].myPlan, nullptr, &in, nullptr, &out, nullptr, nullptr); // contain garbage data
         // printf("%u,%u\n", in, out);
 
         // run 10 times
         for (int c = 0; c < 10; c++) {
-            work[i].myFFT.runFFT(work[i].myPlan, nullptr, in, nullptr, out, nullptr, nullptr);
+            SafeFFT::runFFT(work[i].myPlan, nullptr, in, nullptr, out, nullptr, nullptr);
         }
     }
     mytimer.stop("FFT finished");

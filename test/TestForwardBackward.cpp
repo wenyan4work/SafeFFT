@@ -8,8 +8,7 @@
 #include "Timer.hpp"
 
 void testSafeFFT() {
-    using safefft::SafeFFT;
-    using safefft::SafeFFT;
+    using namespace safefft;
 
     // a list of FFTs to run
     const int workNumber = 10000000;
