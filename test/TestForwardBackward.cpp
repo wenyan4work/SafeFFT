@@ -31,7 +31,8 @@ void testSafeFFT() {
 
         // get in out buffer
         safefft::ComplexT *in, *out;
-        safefft::SafeFFT::fitBuffer(forward, &in, nullptr, nullptr, &out, nullptr, nullptr);
+        safefft::SafeFFT::fitBuffer(forward, &in, nullptr, nullptr, &out,
+                                    nullptr, nullptr);
 
         for (int i = 0; i < forward.n0; i++) {
             in[i][0] = i;
@@ -51,7 +52,10 @@ void testSafeFFT() {
         }
 #ifndef NDEBUG
 #pragma omp critical
-        { printf("size %u, error %g, %g, %g\n", forward.n0, error, (double)in[1][0], (double)in[1][1]); }
+        {
+            printf("size %u, error %g, %g, %g\n", forward.n0, error,
+                   (double)in[1][0], (double)in[1][1]);
+        }
 #endif
     }
 

@@ -14,8 +14,10 @@ void benchSafeFFT() {
     using namespace safefft;
     const int workNumber = WORKNUMBER;
     // a list of FFTs to run
-    std::random_device rd;  // Will be used to obtain a seed for the random number engine
-    std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+    // Will be used to obtain a seed for the random number engine
+    std::random_device rd;
+    // Standard mersenne_twister_engine seeded with rd()
+    std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(1, TOTALSIZE);
 
     struct FFT {

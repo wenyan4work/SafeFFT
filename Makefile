@@ -11,8 +11,7 @@ FFTLIB= -lmkl_rt
 # for icpc + mkl on linux
 # CXXFLAGS= $(FFTINC) -std=c++11 -qopenmp -O3 -xcore-avx2 -axcore-avx512 -DNDEBUG
 
-# for clang + mkl on mac
-CXXFLAGS= $(FFTINC) -std=c++11 -fopenmp=libiomp5 -O3 -march=native -DNDEBUG
+CXXFLAGS= $(FFTINC) -std=c++11 -fopenmp -O3 -march=native -DNDEBUG
 
 LDLIBS= $(FFTLIB) $(CXXFLAGS)
 

@@ -15,8 +15,12 @@ struct AlignedMemory {
     T *alignedPtr = nullptr; // ptr to the aligned address of the buffer
 
     // constructor destructor
-    AlignedMemory() : alignedPtr(nullptr), numberOfT(0), rawBytePtr(nullptr), rawByteSize(0) {}
-    explicit AlignedMemory(size_t nT) : alignedPtr(nullptr), numberOfT(0), rawBytePtr(nullptr), rawByteSize(0) {
+    AlignedMemory()
+        : alignedPtr(nullptr), numberOfT(0), rawBytePtr(nullptr),
+          rawByteSize(0) {}
+    explicit AlignedMemory(size_t nT)
+        : alignedPtr(nullptr), numberOfT(0), rawBytePtr(nullptr),
+          rawByteSize(0) {
         resize(nT);
     }
 
@@ -42,7 +46,8 @@ struct AlignedMemory {
         // get a large enough raw memory block
         rawByteSize = nT * sizeof(T) + N;
         if (rawBytePtr == nullptr) {
-            rawBytePtr = std::malloc(rawByteSize); // std::malloc is required to be thread safe
+            rawBytePtr = std::malloc(
+                rawByteSize); // std::malloc is required to be thread safe
         } else {
             rawBytePtr = std::realloc(rawBytePtr, rawByteSize);
             if (rawBytePtr == nullptr) {
@@ -56,7 +61,10 @@ struct AlignedMemory {
         }
         // return the aligned part
         // copy from Eigen/Memory/h
-        alignedPtr = reinterpret_cast<T *>((reinterpret_cast<std::size_t>(rawBytePtr) & ~(std::size_t(N - 1))) + N);
+        alignedPtr =
+            reinterpret_cast<T *>((reinterpret_cast<std::size_t>(rawBytePtr) &
+                                   ~(std::size_t(N - 1))) +
+                                  N);
         numberOfT = nT;
     }
 
