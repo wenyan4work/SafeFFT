@@ -22,7 +22,7 @@ For the same reason, I am not using a concurrent unordered_map like the one from
 3. In any cases, the member functions of `SafeFFT` are supposed to be called from the root level openmp thread team. Otherwise, the thread id returned by `omp_get_thread_num()` may not be meaningful, which may cause problems when locating the per thread buffer and internal locks.  
 
 ## Implementation Notes
-1. It is header only. Put `SafeFFT.hpp` and `AlignedMemory.hpp` anywhere and it should work.
+1. It is header only. Include `SafeFFT.hpp` in your code. Call `safefft::init()` once before calling `runFFT()` or `fitBuffer()`.
 2. All SafeFFT object share one Runner object, which does the real work. Only one Runner instance should exist throughout the program.
 3. The safeFFT object stores only one pointer. Its memory footprint is supposed to be small and it could be declared as a member for the user's class. 
 4. Each thread maintains its own aligned in/out buffer memory. 

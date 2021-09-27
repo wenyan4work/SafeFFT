@@ -23,9 +23,7 @@ SRCDIR = ./test
 OBJDIR = ./obj
 INCDIR = ./include
 
-INC = \
-	$(INCDIR)/AlignedMemory.hpp \
-	$(INCDIR)/SafeFFT.hpp
+INC = $(INCDIR)/SafeFFT.hpp
 
 TARGET_BIN = \
        $(BINDIR)/Demo1DForBack \
