@@ -28,8 +28,8 @@ INC = \
 	$(INCDIR)/SafeFFT.hpp
 
 TARGET_BIN = \
-       $(BINDIR)/TestForwardBackward \
        $(BINDIR)/Demo1DForBack \
+       $(BINDIR)/TestForwardBackward \
        $(BINDIR)/Test1DSmall \
        $(BINDIR)/Test1DR2CSmall \
        $(BINDIR)/Test1DLarge \

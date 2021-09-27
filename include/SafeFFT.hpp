@@ -344,10 +344,10 @@ class Runner {
 
     // forbid copy
     Runner(const Runner &) = delete;
-    const Runner &operator=(const Runner &) = delete;
+    Runner &operator=(const Runner &) = delete;
     // forbid move
     Runner(Runner &&) = delete;
-    const Runner &operator=(Runner &&) = delete;
+    Runner &operator=(Runner &&) = delete;
 
     void clearPool() {
         for (auto &p : planPool) {
@@ -672,6 +672,11 @@ class Runner {
         return plan;
     }
 
+    static Runner &instance() {
+        static Runner runner(DEFAULTSIZE);
+        return runner;
+    }
+
   private:
     // custom hash function for PlanFFT
     struct hashPlanGuruFFT {
@@ -737,50 +742,27 @@ class Runner {
     omp_lock_t writeLock;
 }; // namespace safefft
 
-class SafeFFT {
-  public:
-    SafeFFT() { assert(runnerPtr); }
+void init() { Runner::instance(); }
 
-    ~SafeFFT() = default;
+void runFFT(const PlanGuruFFT planGuru, ComplexT *in = nullptr,
+            double *inReal = nullptr, double *inImag = nullptr,
+            ComplexT *out = nullptr, double *outReal = nullptr,
+            double *outImag = nullptr) {
+    // a planGuru is always constructed by copy, depending on the plan passed in
 
-    // default copy
-    SafeFFT(const SafeFFT &) = default;
-    SafeFFT(SafeFFT &&) = default;
-    SafeFFT &operator=(const SafeFFT &) = default;
-    SafeFFT &operator=(SafeFFT &&) = default;
+    auto &runner = Runner::instance();
+    runner.runFFT(planGuru, in, inReal, inImag, out, outReal, outImag);
+    return;
+}
 
-    // CHECK:run fft
-    static void runFFT(const PlanGuruFFT planGuru, ComplexT *in = nullptr,
-                       double *inReal = nullptr, double *inImag = nullptr,
-                       ComplexT *out = nullptr, double *outReal = nullptr,
-                       double *outImag = nullptr) {
-        // a planGuru is always constructed by copy, depending on the plan passed in
-        assert(runnerPtr); // the runner has been allocated.
-
-        runnerPtr->runFFT(planGuru, in, inReal, inImag, out, outReal, outImag);
-        return;
-    }
-
-    // CHECK: buffer allocating
-    static void fitBuffer(const PlanGuruFFT planGuru, ComplexT **in = nullptr,
-                          double **inReal = nullptr, double **inImag = nullptr,
-                          ComplexT **out = nullptr, double **outReal = nullptr,
-                          double **outImag = nullptr) {
-        assert(runnerPtr); // the runner has been allocated.
-        runnerPtr->fitBuffer(planGuru, in, inReal, inImag, out, outReal,
-                             outImag);
-        return;
-    }
-
-    static void init() { runnerPtr = new Runner(DEFAULTSIZE); }
-
-    static void finalize() { delete runnerPtr; }
-
-  private:
-    static Runner *runnerPtr;
-}; // namespace safefft
-
-Runner *SafeFFT::runnerPtr = nullptr;
+void fitBuffer(const PlanGuruFFT planGuru, ComplexT **in = nullptr,
+               double **inReal = nullptr, double **inImag = nullptr,
+               ComplexT **out = nullptr, double **outReal = nullptr,
+               double **outImag = nullptr) {
+    auto &runner = Runner::instance();
+    runner.fitBuffer(planGuru, in, inReal, inImag, out, outReal, outImag);
+    return;
+}
 
 } // namespace safefft
 #endif

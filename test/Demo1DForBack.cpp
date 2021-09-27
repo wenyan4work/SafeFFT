@@ -9,7 +9,7 @@
 
 int main() {
     using namespace safefft;
-    SafeFFT::init();
+    init();
     const int workNumber = 10000000; // 10million small FFTs
 #pragma omp parallel for
     for (int i = 0; i < workNumber; i++) {
@@ -18,14 +18,12 @@ int main() {
         forward.sign = FFTW_FORWARD;
 
         ComplexT *in, *out;
-        SafeFFT::fitBuffer(forward, &in, nullptr, nullptr, &out, nullptr,
-                           nullptr);
+        fitBuffer(forward, &in, nullptr, nullptr, &out, nullptr, nullptr);
 
         for (int i = 0; i < forward.n0; i++)
             in[i][0] = in[i][1] = i;
 
-        SafeFFT::runFFT(forward, in, nullptr, nullptr, out, nullptr, nullptr);
+        runFFT(forward, in, nullptr, nullptr, out, nullptr, nullptr);
     }
-    SafeFFT::finalize();
     return 0;
 }

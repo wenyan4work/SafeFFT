@@ -7,7 +7,6 @@
 #include "Timer.hpp"
 
 void testSafeFFT() {
-    using namespace safefft;
 
     // a list of FFTs to run
     const int workNumber = 10000000;
@@ -30,8 +29,8 @@ void testSafeFFT() {
 
         // get in out buffer
         safefft::ComplexT *in, *out;
-        safefft::SafeFFT::fitBuffer(forward, &in, nullptr, nullptr, &out,
-                                    nullptr, nullptr);
+        safefft::fitBuffer(forward, &in, nullptr, nullptr, &out, nullptr,
+                           nullptr);
 
         for (int i = 0; i < forward.n0; i++) {
             in[i][0] = i;
@@ -39,10 +38,10 @@ void testSafeFFT() {
         }
 
         // forward
-        SafeFFT::runFFT(forward, in, nullptr, nullptr, out, nullptr, nullptr);
+        safefft::runFFT(forward, in, nullptr, nullptr, out, nullptr, nullptr);
 
         // backward
-        SafeFFT::runFFT(backward, out, nullptr, nullptr, in, nullptr, nullptr);
+        safefft::runFFT(backward, out, nullptr, nullptr, in, nullptr, nullptr);
 
         // compare error of real part
         error = 0;
@@ -62,8 +61,7 @@ void testSafeFFT() {
 }
 
 int main() {
-    safefft::SafeFFT::init();
+    safefft::init();
     testSafeFFT();
-    safefft::SafeFFT::finalize();
     return 0;
 }
