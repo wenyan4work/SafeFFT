@@ -1,5 +1,5 @@
-#ifndef SAFEFFT_HPP
-#define SAFEFFT_HPP
+#ifndef SAFEFFT_HPP_
+#define SAFEFFT_HPP_
 
 #include <cassert>
 #include <cstring>
@@ -9,23 +9,89 @@
 #include <vector>
 
 #include <fftw3.h>
-#include <omp.h>
 #ifdef FFTW3_MKL
 #include <fftw3_mkl.h>
 #endif
 
-#include "AlignedMemory.hpp"
-
-#define DEFAULTALIGN 32            // number of bytes
-#define DEFAULTSIZE 128            // number of ComplexT
-#define DEFAULTPLANTIME 2          // 2 seconds of planning time
-#define DEFAULTMAXRANK 3           // max 3 dimensional
-#define DEFAULTSIGN (FFTW_FORWARD) // sign of Fourier transform
-
-#define DEFAULTFLAG (FFTW_MEASURE | FFTW_DESTROY_INPUT)
-// with this flag, the input array will be destroyed, and input and output must not overlap
+#include <omp.h>
 
 namespace safefft {
+
+constexpr int DEFAULTALIGN = 32;            // number of bytes
+constexpr int DEFAULTSIZE = 128;            // number of ComplexT
+constexpr int DEFAULTPLANTIME = 2;          // 2 seconds of planning time
+constexpr int DEFAULTMAXRANK = 3;           // max 3 dimensional
+constexpr int DEFAULTSIGN = (FFTW_FORWARD); // sign of Fourier transform
+
+constexpr int DEFAULTFLAG = (FFTW_MEASURE | FFTW_DESTROY_INPUT);
+// with this flag, the input array will be destroyed, and input and output must not overlap
+
+template <class T, size_t N>
+struct AlignedMemory {
+    static_assert(sizeof(T) < N, "size of T must be smaller than N");
+
+    // N is the alignment parameter. 32 for AVX
+    T *alignedPtr = nullptr; // ptr to the aligned address of the buffer
+
+    // constructor destructor
+    AlignedMemory()
+        : alignedPtr(nullptr), numberOfT(0), rawBytePtr(nullptr),
+          rawByteSize(0) {}
+    explicit AlignedMemory(size_t nT)
+        : alignedPtr(nullptr), numberOfT(0), rawBytePtr(nullptr),
+          rawByteSize(0) {
+        resize(nT);
+    }
+
+    ~AlignedMemory() {
+        if (rawBytePtr != nullptr) {
+            std::free(rawBytePtr);
+            rawBytePtr = nullptr;
+        }
+        alignedPtr = nullptr;
+    }
+
+    // forbid copy
+    AlignedMemory(const AlignedMemory &) = delete;
+    AlignedMemory(AlignedMemory &&) = delete;
+    AlignedMemory &operator=(const AlignedMemory &) = delete;
+    AlignedMemory &operator=(AlignedMemory &&) = delete;
+
+    // no guarantee of the data already in the allocated memory
+    void resize(size_t nT) {
+        if (nT <= numberOfT) {
+            return;
+        }
+        // get a large enough raw memory block
+        rawByteSize = nT * sizeof(T) + N;
+        if (rawBytePtr == nullptr) {
+            rawBytePtr = std::malloc(
+                rawByteSize); // std::malloc is required to be thread safe
+        } else {
+            rawBytePtr = std::realloc(rawBytePtr, rawByteSize);
+            if (rawBytePtr == nullptr) {
+                std::free(rawBytePtr);
+                rawBytePtr = std::malloc(rawByteSize);
+            }
+        }
+        if (rawBytePtr == nullptr) {
+            printf("allocation fail\n");
+            exit(1);
+        }
+        // return the aligned part
+        // copy from Eigen/Memory/h
+        alignedPtr =
+            reinterpret_cast<T *>((reinterpret_cast<std::size_t>(rawBytePtr) &
+                                   ~(std::size_t(N - 1))) +
+                                  N);
+        numberOfT = nT;
+    }
+
+  private:
+    void *rawBytePtr = nullptr; // ptr to the whole buffer
+    size_t rawByteSize = 0;     // number of Bytes
+    size_t numberOfT = 0;
+};
 
 using ComplexT = fftw_complex;
 

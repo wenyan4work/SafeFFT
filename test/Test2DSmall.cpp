@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <random>
 
-#include "../include/AlignedMemory.hpp"
 #include "../include/SafeFFT.hpp"
 #include "Timer.hpp"
 
