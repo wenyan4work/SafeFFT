@@ -22,7 +22,6 @@ constexpr int DEFAULTSIZE = 128;            // number of ComplexT
 constexpr int DEFAULTPLANTIME = 2;          // 2 seconds of planning time
 constexpr int DEFAULTMAXRANK = 3;           // max 3 dimensional
 constexpr int DEFAULTSIGN = (FFTW_FORWARD); // sign of Fourier transform
-
 constexpr int DEFAULTFLAG = (FFTW_MEASURE | FFTW_DESTROY_INPUT);
 // with this flag, the input array will be destroyed, and input and output must not overlap
 
@@ -744,7 +743,7 @@ class Runner {
 
 void init() { Runner::instance(); }
 
-void runFFT(const PlanGuruFFT planGuru, ComplexT *in = nullptr,
+void runFFT(const PlanGuruFFT &planGuru, ComplexT *in = nullptr,
             double *inReal = nullptr, double *inImag = nullptr,
             ComplexT *out = nullptr, double *outReal = nullptr,
             double *outImag = nullptr) {
@@ -755,7 +754,7 @@ void runFFT(const PlanGuruFFT planGuru, ComplexT *in = nullptr,
     return;
 }
 
-void fitBuffer(const PlanGuruFFT planGuru, ComplexT **in = nullptr,
+void fitBuffer(const PlanGuruFFT &planGuru, ComplexT **in = nullptr,
                double **inReal = nullptr, double **inImag = nullptr,
                ComplexT **out = nullptr, double **outReal = nullptr,
                double **outImag = nullptr) {
